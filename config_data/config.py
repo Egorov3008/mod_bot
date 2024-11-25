@@ -11,7 +11,10 @@ else:
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+API_ID = os.getenv("API_ID")
+API_HASH = os.getenv("API_HASH")
 DEFAULT_COMMANDS = (
     ("start", "Запустить бота"),
     ("check_bot_rights", "Проверка статуса бота"),
+    ("get_forum_info", "Информация о чате"),
 )

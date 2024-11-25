@@ -1,89 +1,35 @@
-import json
-import aiofiles
-from aiogram.enums import ChatMemberStatus
+import traceback
+from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.filters import Command, CommandStart
 from aiogram import Router, F, exceptions
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import Message
 from loger.logger_helper import get_logger
 from loader import bot
 from config_data.config import CHAT_ID
 from states.states_bot import Form, Topic
 from keyboards.inline.inline_config import choice, topic_kb
+from utils.utils_custom import save_to_json, choice_from_json, load_from_json
 
 log = get_logger(__name__)
 router = Router()
 chat_id = CHAT_ID
 
 
-async def save_to_json(data, name_file):
-    try:
-        async with aiofiles.open(name_file, mode='r', encoding='utf-8') as f:
-            contents = await f.read()
-            if contents.strip():  # Проверка на пустое содержимое
-                existing_data = json.loads(contents)
-            else:
-                existing_data = {}
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        log.error(f"Произошла ошибка при чтении файла: {e}")
-        existing_data = {}
-
-    # Обновляем существующие данные новыми
-    for key, value in data.items():
-        existing_data[key] = value
-
-    try:
-        # Запись обновленных данных в файл
-        async with aiofiles.open(name_file, mode='w', encoding='utf-8') as f:
-            await f.write(json.dumps(existing_data, indent=4, ensure_ascii=False))
-            log.debug("Данные сохранны")
-    except Exception as e:
-        log.error(f"Произошла ошибка при записи файла: {e}")
-
-
-async def load_from_json(name_file):
-    try:
-        async with aiofiles.open(name_file, mode='r', encoding='utf-8') as f:
-            contents = await f.read()
-            if contents.strip():
-                return json.loads(contents)
-            return {}
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        log.error(f"Произошла ошибка при чтении файла: {e}")
-        return {}
-
-
-async def delete_from_json(key, name_file):
-    try:
-        async with aiofiles.open(name_file, mode='r', encoding='utf-8') as f:
-            contents = await f.read()
-            if contents.strip():
-                data = json.loads(contents)
-            else:
-                data = {}
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        log.error(f"Произошла ошибка при чтении файла: {e}")
-        return False
-
-    if key in data:
-        del data[key]
-        try:
-            async with aiofiles.open(name_file, mode='w', encoding='utf-8') as f:
-                await f.write(json.dumps(data, indent=4, ensure_ascii=False))
-            return True
-        except Exception as e:
-            log.error(f"Произошла ошибка при записи файла: {e}")
-            return False
-    return False
-
-
 @router.message(CommandStart())
 async def start_bot(message: Message, state: FSMContext):
+    """
+    Обрабатывает команду /start. Проверяет права администратора пользователя
+    и отправляет приветственное сообщение с выбором действия.
+
+    :param message: Message - Сообщение, содержащее команду /start.
+    :param state: FSMContext - Контекст состояния для работы с состояниями.
+    """
     try:
-        admins = await get_group_admins()
+        await get_group_info(chat_id)
+        admins = await get_group_admins(chat_id)
         user = message.from_user
-        status = await check_checking_admin_rights()
+        status = await check_checking_admin_rights(chat_id)
         if user.id in admins and status:
             kb = await choice()
             await state.set_state(Form.admin_true)
@@ -93,31 +39,89 @@ async def start_bot(message: Message, state: FSMContext):
             await message.answer(f"Привет {user.first_name}! Вы должны сделать меня админом в группе")
     except Exception as e:
         await message.answer("Что-то пошло не так 🤷‍♂️\n"
-                             "Возможно меня нет в Вашей группе")
+                             "Возможно, меня нет в Вашей группе")
 
 
-async def get_group_admins(chat_id: int = CHAT_ID):
+async def get_group_info(chat_id):
+    """
+    Получает информацию о группе, включая список идентификаторов администраторов.
+
+    :param chat_id: int - Идентификатор чата группы.
+    :return: dict - Словарь с информацией о группе и администраторах.
+    """
     try:
-        admins = await bot.get_chat_administrators(chat_id)
-        list_admins_id = [adm.user.id for adm in admins]
-        return list_admins_id
+        chat = await bot.get_chat(chat_id)
+
+        if chat.type != ChatType.SUPERGROUP:
+            log.debug("Этот чат не является супергруппой.")
+            return
+
+        administrators = await bot.get_chat_administrators(chat_id)
+        log.debug(f"Полученные данные: {administrators}")
+
+        chat_info = {
+            "Название чата": chat.title,
+            "ID_Чата": chat.id,
+            "Тип чата": chat.type,
+            "Количество администраторов": len(administrators),
+            "Администраторы": [
+                {
+                    "Admin ID": user.id,
+                    "Имя администратора": user.full_name,
+                    "Username": f"@{user.username}" if hasattr(user, 'username') and user.username else "Нет"
+                }
+                for user in administrators
+            ],
+            "Темы чата": {},  # Здесь можно добавить информацию о темах, если она доступна.
+        }
+
+        await save_to_json(chat_info, "info_chats.json")
+
+        return chat_info  # Возвращаем информацию о группе
     except Exception as e:
-        log.error(f"Что-то пошло не так {e}")
+        trace = traceback.format_exc()
+        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+        return None  # Возвращаем None в случае ошибки
 
 
-async def check_checking_admin_rights(chat_id: int = CHAT_ID):
+async def get_group_admins(chat_id):
+    try:
+        data_admins = await choice_from_json(chat_id, "info_chats.json")
+        list_admins = data_admins.get("Администраторы:")
+        list_id_admins = [itm.get("Admin ID") for itm in list_admins]
+        return list_id_admins
+    except Exception as e:
+        trace = traceback.format_exc()
+        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+
+
+async def check_checking_admin_rights(chat_id):
+    """
+    Проверяет, является ли бот администратором в группе.
+
+    :param chat_id: int - Идентификатор чата группы (по умолчанию CHAT_ID).
+    :return: bool - True, если бот является администратором, иначе False.
+    """
     try:
         bot_user = await bot.get_me()
+        log.debug(f"Получен id бота: {bot_user.id}")
         bot_member = await bot.get_chat_member(chat_id, bot_user.id)
-        if bot_member.status == ChatMemberStatus.ADMINISTRATOR:
-            return True
-        return False
+        log.debug(f"Уровень usera: {bot_member.status} в чате: {chat_id}")
+        return bot_member.status == ChatMemberStatus.ADMINISTRATOR
     except Exception as e:
-        log.error(f"Возникла ошибка {str(e)}")
+        trace = traceback.format_exc()
+        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+        return False
 
 
 @router.message(Command("check_bot_rights"))
-async def check_bot_rights(message: Message, chat_id: int = CHAT_ID):
+async def check_bot_rights(message: Message):
+    """
+    Обрабатывает команду /check_bot_rights. Проверяет права бота в указанном чате
+    и отправляет информацию о статусе бота.
+
+    :param message: Message - Сообщение, содержащее команду.
+    """
     try:
         bot_user = await bot.get_me()
         chat = await bot.get_chat(chat_id)
@@ -135,105 +139,197 @@ async def check_bot_rights(message: Message, chat_id: int = CHAT_ID):
             log.error(f"Ошибка при проверке прав бота: {e}")
             await message.reply("Не удалось проверить права бота в этом чате.")
     except exceptions.TelegramForbiddenError as e:
-        await message.reply(f"Бот не состоит в группе")
+        await message.reply("Бот не состоит в группе")
 
 
-@router.callback_query(F.data == "topic")
-async def topic_menu(callback: CallbackQuery, state: FSMContext):
-    kb = await topic_kb()
-    await callback.message.answer("Выберите действие", reply_markup=kb)
-    await state.set_state(Topic.menu)
+@router.message(Command('get_chat_info'))
+async def get_chat_info(message: Message):
+    """
+    Обрабатывает команду /get_chat_info. Получает информацию о чате и
+    отправляет её пользователю.
 
-
-
-@router.callback_query(F.data == "get_topic")
-async def set_topic(callback: CallbackQuery, state: FSMContext):
-    log.info("Пользователь выбрал 'get_topic'.")
-    await callback.message.answer("Введите: 'название темы'|'ссылка на тему'")
-    await state.set_state(Topic.menu)
-
-
-@router.message(Topic.menu)
-async def get_topic(message: Message, state: FSMContext):
-    text = message.text
-    lst = text.split('|')
-    if len(lst) != 2:
-        await message.answer("Неправильный формат. Попробуйте еще раз ввести 'название темы'|'ссылка на тему'")
-        return
-
+    :param message: Message - Сообщение, содержащее команду.
+    """
     try:
-        topic_name, topic_url = lst
-        data = {topic_name: topic_url}
-        await save_to_json(data, "topic.json")
-        await message.answer(f"Тема: {topic_name} принята")
+        chat = await bot.get_chat(chat_id)
+
+        if chat.type != ChatType.SUPERGROUP:
+            await message.answer("Этот чат не является супергруппой.")
+            return
+
+        administrators = await bot.get_chat_administrators(chat_id)
+
+        chat_info = {
+            "Chat ID": {chat.id},
+            "Название": {chat.title},
+            "Тип чата": {chat.type},
+            "Количество администраторов": {len(administrators)},
+            "Администраторы:": [{"Admin ID": {user.id},
+                                 "Имя администратора": {user.full_name},
+                                 "Username": f"@{user.username}"} if user.username else "Нет" for user in
+                                administrators]
+        }
+        #
+        # # log.debug(f"Объект user: {admin}")
+        # for k, v in chat_info.items():
+        #     if k == "Администраторы:":
+        #     await message.answer(chat_info)
     except Exception as e:
-        log.error(f"Что-то пошло не так: {e}")
-        await message.answer("Произошла ошибка при сохранении темы. Попробуйте еще раз.")
-        await state.set_state(Topic.menu)
+        trace = traceback.format_exc()
+        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
 
-
-@router.callback_query(F.data == "view_topics")
-async def view_topics(callback: CallbackQuery):
-    log.info("Пользователь выбрал 'view_topics'.")
-    topics = await load_from_json("topic.json")
-    if not topics:
-        await callback.message.answer("Темы не найдены.")
-        return
-
-    response = "Список тем:\n"
-    for topic, url in topics.items():
-        response += f"{topic}: {url}\n"
-
-    await callback.message.answer(response)
-
-
-@router.callback_query(F.data == "delete_topic")
-async def choose_topic_for_deletion(callback: CallbackQuery):
-    log.info("Пользователь выбрал 'delete_topic'.")
-    topics = await load_from_json("topic.json")
-    if not topics:
-        await callback.message.answer("Темы не найдены.")
-        return
-
-    builder = InlineKeyboardBuilder()
-    for topic in topics.keys():
-        builder.button(text=topic, callback_data=f"confirm_delete_{topic}")
-    builder.adjust(1)
-
-    await callback.message.answer("Выберите тему:", reply_markup=builder.as_markup())
-
-
-@router.callback_query(F.data.startswith("confirm_delete_"))
-async def confirm_delete_topic(callback: CallbackQuery):
-    topic = callback.data[len("confirm_delete_"):]
-    success = await delete_from_json(topic, "topic.json")
-    if success:
-        await callback.message.answer(f"Тема '{topic}' успешно удалена.")
-    else:
-        await callback.message.answer(f"Не удалось удалить тему '{topic}'. Возможно, она не существует.")
-
-
-@router.callback_query(F.data == "choice_topic")
-async def choose_topic_for_deletion(callback: CallbackQuery):
-    log.info("Пользователь выбрал 'choice_topic'.")
-    topics = await load_from_json("topic.json")
-    if not topics:
-        await callback.message.answer("Темы не найдены.")
-        return
-
-    builder = InlineKeyboardBuilder()
-    for topic in topics.keys():
-        builder.button(text=topic, callback_data=f"choice_{topic}")
-    builder.adjust(1)
-
-    await callback.message.answer("Выберите тему:", reply_markup=builder.as_markup())
-
-
-@router.callback_query(F.data.startswith("confirm_delete_"))
-async def confirm_delete_topic(callback: CallbackQuery):
-    topic = callback.data[len("confirm_delete_"):]
-    success = await delete_from_json(topic, "topic.json")
-    if success:
-        await callback.message.answer(f"Тема '{topic}' успешно удалена.")
-    else:
-        await callback.message.answer(f"Не удалось удалить тему '{topic}'. Возможно, она не существует.")
+# @router.callback_query(F.data == "choice_topic")
+# async def choose_topic_for_choice(callback: CallbackQuery):
+#     """
+#     Позволяет пользователю выбрать тему для регистрации.
+#
+#     Загружает список тем из JSON-файла и предлагает пользователю выбрать
+#     одну из них для последующих действий.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     log.info("Пользователь выбрал 'choice_topic'.")
+#     topics = await load_from_json("topic.json")
+#     if not topics:
+#         await callback.message.answer("Темы не найдены.")
+#         return
+#
+#     builder = InlineKeyboardBuilder()
+#     for topic in topics.keys():
+#         builder.button(text=topic, callback_data=f"choice_{topic}")
+#     builder.adjust(1)
+#
+#     await callback.message.answer("Выберите тему:", reply_markup=builder.as_markup())
+#
+#
+# @router.callback_query(F.data.startswith("choice_"))
+# async def register_to_topic(callback: CallbackQuery):
+#     """
+#     Регистрирует пользователя на выбранную тему.
+#
+#     Извлекает название темы из данных обратного вызова и добавляет
+#     пользователя в список зарегистрированных. Уведомляет о результате.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     topic = callback.data[len("choice_"):]
+#     topics = await load_from_json("topic.json")
+#
+#     if topic not in topics:
+#         await callback.message.answer(f"Тема '{topic}' не найдена.")
+#         return
+#
+#     user_id = callback.from_user.id
+#
+#     if user_id not in topics[topic]["users"]:
+#         topics[topic]["users"].append(user_id)
+#         await save_to_json(topics, "topic.json")
+#         await callback.message.answer(f"Вы успешно зарегистрированы на тему '{topic}'.")
+#     else:
+#         await callback.message.answer(f"Вы уже зарегистрированы на тему '{topic}'.")
+#
+#
+# @router.callback_query(F.data == "unsubscribe_topic")
+# async def choose_topic_for_unsubscribe(callback: CallbackQuery):
+#     """
+#     Позволяет пользователю выбрать тему для отписки.
+#
+#     Загружает список тем из JSON-файла и предлагает пользователю выбрать
+#     одну из них для отписки.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     log.info("Пользователь выбрал 'unsubscribe_topic'.")
+#     topics = await load_from_json("topic.json")
+#     if not topics:
+#         await callback.message.answer("Темы не найдены.")
+#         return
+#
+#     builder = InlineKeyboardBuilder()
+#     for topic in topics.keys():
+#         builder.button(text=topic, callback_data=f"unsubscribe_{topic}")
+#     builder.adjust(1)
+#
+#     await callback.message.answer("Выберите тему для отписки:", reply_markup=builder.as_markup())
+#
+#
+# @router.callback_query(F.data.startswith("unsubscribe_"))
+# async def unsubscribe_from_topic(callback: CallbackQuery):
+#     """
+#     Отписывает пользователя от выбранной темы.
+#
+#     Извлекает название темы из данных обратного вызова и удаляет
+#     пользователя из списка зарегистрированных. Уведомляет о результате.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     topic = callback.data[len("unsubscribe_"):]
+#     topics = await load_from_json("topic.json")
+#
+#     if topic not in topics:
+#         await callback.message.answer(f"Тема '{topic}' не найдена.")
+#         return
+#
+#     user_id = callback.from_user.id
+#
+#     if user_id in topics[topic]["users"]:
+#         topics[topic]["users"].remove(user_id)
+#         await save_to_json(topics, "topic.json")
+#         await callback.message.answer(f"Вы успешно отписались от темы '{topic}'.")
+#     else:
+#         await callback.message.answer(f"Вы не зарегистрированы на тему '{topic}'.")
+#
+#
+# @router.callback_query(F.data == "view_registered_users")
+# async def choose_topic_for_view_users(callback: CallbackQuery):
+#     """
+#     Позволяет пользователю выбрать тему для просмотра зарегистрированных пользователей.
+#
+#     Загружает список тем из JSON-файла и предлагает пользователю выбрать
+#     одну из них для просмотра зарегистрированных пользователей.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     log.info("Пользователь выбрал 'view_registered_users'.")
+#     topics = await load_from_json("topic.json")
+#     if not topics:
+#         await callback.message.answer("Темы не найдены.")
+#         return
+#
+#     builder = InlineKeyboardBuilder()
+#     for topic in topics.keys():
+#         builder.button(text=topic, callback_data=f"view_users_{topic}")
+#     builder.adjust(1)
+#
+#     await callback.message.answer("Выберите тему для просмотра пользователей:", reply_markup=builder.as_markup())
+#
+#
+# @router.callback_query(F.data.startswith("view_users_"))
+# async def view_registered_users(callback: CallbackQuery):
+#     """
+#     Отображает зарегистрированных пользователей для выбранной темы.
+#
+#     Извлекает название темы из данных обратного вызова и загружает
+#     список зарегистрированных пользователей. Уведомляет пользователя о результате.
+#
+#     Args:
+#         callback (CallbackQuery): Объект обратного вызова, содержащий информацию о нажатой кнопке.
+#     """
+#     topic = callback.data[len("view_users_"):]
+#     topics = await load_from_json("topic.json")
+#
+#     if topic not in topics:
+#         await callback.message.answer(f"Тема '{topic}' не найдена.")
+#         return
+#
+#     users = topics[topic]["users"]
+#     if not users:
+#         await callback.message.answer(f"Нет зарегистрированных пользователей для темы '{topic}'.")
+#     else:
+#         users_list = "\n".join(users)
+#         await callback.message.answer(f"Зарегистрированные пользователи для темы '{topic}':\n{users_list}")

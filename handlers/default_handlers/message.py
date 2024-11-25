@@ -1,6 +1,4 @@
 import datetime
-import json
-import aiofiles
 from aiogram import Router, F
 from aiogram.enums import ContentType
 from aiogram.fsm.context import FSMContext
@@ -11,6 +9,7 @@ from keyboards.inline.inline_config import kb_url, choice_filter_done
 from states.states_bot import Form, Builder
 from handlers.default_handlers.adm_handlers import load_from_json, save_to_json
 from config_data.config import CHAT_ID
+from utils.utils_custom import choice_from_json
 
 chat_id = CHAT_ID
 log = get_logger(__name__)
@@ -20,21 +19,6 @@ router = Router()
 def is_img_message(message: Message):
     return message.content_type == ContentType.PHOTO
 
-
-async def choice_from_json(key, name_file):
-    try:
-        async with aiofiles.open(name_file, mode='r', encoding='utf-8') as f:
-            contents = await f.read()
-            if contents.strip():
-                data = json.loads(contents)
-            else:
-                data = {}
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        log.error(f"Произошла ошибка при чтении файла: {e}")
-        return False
-
-    if key in data:
-        return data[key]
 
 
 @router.callback_query(F.data == "msg")
@@ -78,18 +62,15 @@ async def get_msg_elm(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Выберете тему:", reply_markup=builder.as_markup())
     elif callback.data == "done":
         await state.set_state(Builder.done)
-        log.debug("Конфигурация сообщения завершена")
+        log.debug("Пользователь завершил ввод сообщения.")
+        data = await state.get_data()
+        data_time = data.get("time_start")
+        await save_to_json(data, "message.json")
+        await callback.message.answer(f"Сообщение с датой публикации {data_time} принято")
+        data.clear()
+
     await callback.message.delete()
 
-
-@router.callback_query(Builder.done)
-async def finalize_message(callback: CallbackQuery, state: FSMContext):
-    log.debug("Пользователь завершил ввод сообщения.")
-    data = await state.get_data()
-    data_time = data.get("time_start")
-    await save_to_json(data, "message.json")
-    await callback.message.answer(f"Сообщение с датой публикации {data_time} принято")
-    data.clear()
 
 
 @router.message(Builder.get_text)

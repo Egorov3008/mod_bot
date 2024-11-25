@@ -1,7 +1,8 @@
 import logging
 import json
 import logging.config
-
+import pathlib
+from io import open
 
 class LevelFilter(logging.Filter):
     def __init__(self, level):
@@ -23,17 +24,16 @@ class LevelFileHandler(logging.FileHandler):
     def emit(self, record: logging.LogRecord):
         message = self.format(record)
 
-        with open(self.file_name, self.mode) as f:
+        # Открытие файла с явным указанием режима и кодировки
+        with open(self.file_name, 'a', encoding='utf-8') as f:
             f.write(message + '\n')
 
 
-with open("loger/logger_helper.json", 'r') as file:
-    dict_config = json.load(file)
+config_file_path = pathlib.Path(__file__).parent / "logger_helper.json"
 
+with config_file_path.open('r') as file:
+    dict_config = json.load(file)
 
 def get_logger(name):
     logging.config.dictConfig(dict_config)
     return logging.getLogger(name)
-
-
-
