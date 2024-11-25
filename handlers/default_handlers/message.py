@@ -7,9 +7,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loger.logger_helper import get_logger
 from keyboards.inline.inline_config import kb_url, choice_filter_done
 from states.states_bot import Form, Builder
-from handlers.default_handlers.adm_handlers import load_from_json, save_to_json
 from config_data.config import CHAT_ID
-from utils.utils_custom import choice_from_json
+from utils.utils_custom import load_from_json, save_to_json
 
 chat_id = CHAT_ID
 log = get_logger(__name__)
@@ -167,7 +166,7 @@ async def process_get_time_del(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("choice_add_"))
 async def confirm_delete_topic(callback: CallbackQuery, state: FSMContext):
     topic = callback.data[len("choice_add_"):]
-    success = await choice_from_json(topic, "topic.json")
+    success = await load_from_json(topic, "topic.json")
     if success:
         await callback.message.reply(f"Тема успешно выбрана.")
         log.debug(f"Выбрана тема с ссылкой {topic}")
