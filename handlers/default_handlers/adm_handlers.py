@@ -25,19 +25,23 @@ async def start_bot(message: Message, state: FSMContext):
     :param message: Message - Сообщение, содержащее команду /start.
     :param state: FSMContext - Контекст состояния для работы с состояниями.
     """
+    user = message.from_user
+
+
     try:
         await get_group_info(chat_id)
         admins = await get_group_admins(chat_id)
-        user = message.from_user
+        is_admin = user.id in admins
         status = await check_checking_admin_rights(chat_id)
-        if user.id in admins and status:
+
+        if is_admin and status:
             kb = await choice()
             await state.set_state(Form.admin_true)
             await message.answer(f"Привет {user.first_name}! Я готов к работе\n"
                                  f"Выбери действие", reply_markup=kb)
-        elif user.id in admins:
+        elif is_admin:
             await message.answer(f"Привет {user.first_name}! Вы должны сделать меня админом в группе")
-    except Exception as e:
+    except Exception:
         await message.answer("Что-то пошло не так 🤷‍♂️\n"
                              "Возможно, меня нет в Вашей группе")
 
@@ -57,7 +61,8 @@ async def get_group_info(chat_id):
             return
 
         administrators = await bot.get_chat_administrators(chat_id)
-        log.debug(f"Полученные данные: {administrators}")
+        users = [usr.user for usr in administrators]
+        log.debug(f"Полученные данные: {users}")
 
         chat_info = {
             "Название чата": chat.title,
@@ -70,49 +75,41 @@ async def get_group_info(chat_id):
                     "Имя администратора": user.full_name,
                     "Username": f"@{user.username}" if hasattr(user, 'username') and user.username else "Нет"
                 }
-                for user in administrators
+                for user in users
             ],
             "Темы чата": {},  # Здесь можно добавить информацию о темах, если она доступна.
         }
 
         await save_to_json(chat_info, "info_chats.json")
-
         return chat_info  # Возвращаем информацию о группе
     except Exception as e:
-        trace = traceback.format_exc()
-        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+        log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
         return None  # Возвращаем None в случае ошибки
 
 
 async def get_group_admins(chat_id):
     try:
         data_admins = await choice_from_json(chat_id, "info_chats.json")
-        list_admins = data_admins.get("Администраторы:")
-        list_id_admins = [itm.get("Admin ID") for itm in list_admins]
-        return list_id_admins
+        return [itm.get("Admin ID") for itm in data_admins.get("Администраторы:", [])]
     except Exception as e:
-        trace = traceback.format_exc()
-        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+        log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
+        return []  # Возвращаем пустой список в случае ошибки
 
 
 async def check_checking_admin_rights(chat_id):
     """
     Проверяет, является ли бот администратором в группе.
 
-    :param chat_id: int - Идентификатор чата группы (по умолчанию CHAT_ID).
+    :param chat_id: int - Идентификатор чата группы.
     :return: bool - True, если бот является администратором, иначе False.
     """
     try:
         bot_user = await bot.get_me()
-        log.debug(f"Получен id бота: {bot_user.id}")
         bot_member = await bot.get_chat_member(chat_id, bot_user.id)
-        log.debug(f"Уровень usera: {bot_member.status} в чате: {chat_id}")
         return bot_member.status == ChatMemberStatus.ADMINISTRATOR
     except Exception as e:
-        trace = traceback.format_exc()
-        log.error(f"Возникла ошибка: {str(e)}\nТрассировка:\n{trace}")
+        log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
         return False
-
 
 @router.message(Command("check_bot_rights"))
 async def check_bot_rights(message: Message):
@@ -158,6 +155,7 @@ async def get_chat_info(message: Message):
             return
 
         administrators = await bot.get_chat_administrators(chat_id)
+        user = [usr.user for usr in administrators]
 
         chat_info = {
             "Chat ID": {chat.id},
