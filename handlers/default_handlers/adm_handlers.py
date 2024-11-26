@@ -34,7 +34,8 @@ async def start_bot(message: Message, state: FSMContext):
         if is_admin:
             kb = await choice()
             await state.set_state(Form.admin_true)
-            await message.answer(f"Привет {user.first_name}! Я готов к работе\n"
+            user_name = user.first_name if user.first_name else user.username
+            await message.answer(f"Привет {user_name}! Я готов к работе\n"
                                  f"Выбери действие", reply_markup=kb)
             await message.delete()
         elif is_admin:
@@ -64,18 +65,19 @@ async def get_group_info(chat_id):
 
         chat_info = {f"{chat_id}":
             {
-            "Название чата": chat.title,
-            "Тип чата": chat.type,
-            "Количество администраторов": len(administrators),
-            "Администраторы": [
-                {
-                    "Admin ID": user.id,
-                    "Имя администратора": user.full_name,
-                    "Username": f"@{user.username}" if hasattr(user, 'username') and user.username else "Нет"
-                }
-                for user in users
-            ]
-        }}
+                "Название чата": chat.title,
+                "Тип чата": chat.type,
+                "Количество администраторов": len(administrators),
+                "Администраторы": [
+                    {
+                        "Admin ID": user.id,
+                        "Имя администратора": user.full_name,
+                        "Username": f"@{user.username}" if hasattr(user, 'username') and user.username else "Нет"
+                    }
+                    for user in users
+                ]
+            }
+        }
 
         await save_to_json(chat_info, "info_chats.json")
         return chat_info  # Возвращаем информацию о группе
@@ -96,7 +98,6 @@ async def get_group_admins(chat_id):
     except Exception as e:
         log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
         return []  # Возвращаем пустой список в случае ошибки
-
 
 
 @router.message(Command("check_bot_rights"))
@@ -143,6 +144,7 @@ async def get_chat_info(message: Message):
             chat_type = chat_info["Тип чата"]
             admin_count = chat_info["Количество администраторов"]
             admins = chat_info["Администраторы"]
+            topic_chat = chat_info["Темы чата"]
 
             # Форматируем сообщение
             response = f"*Название чата:* {chat_name}\n"
@@ -154,6 +156,11 @@ async def get_chat_info(message: Message):
                 response += f"  - *Имя:* {admin['Имя администратора']}\n"
                 response += f"    *Admin ID:* {admin['Admin ID']}\n"
                 response += f"    *Username:* {admin['Username']}\n\n"
+
+            response += "Темы чата"
+
+            for topic in topic_chat:
+                 response += f"  - *{topic}:* {admin['Имя администратора']}\n"
 
             # Отправляем сообщение
             await message.answer(response, parse_mode='Markdown')
