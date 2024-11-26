@@ -56,6 +56,7 @@ async def set_topic(callback: CallbackQuery, state: FSMContext):
 @router.message(Topic.menu)
 async def get_topic(message: Message, state: FSMContext):
     """
+    ОБНАВЛЕНО
     Обрабатывает сообщение пользователя с информацией о теме.
 
     Проверяет формат введенного текста, разбивает его на название темы
@@ -76,12 +77,15 @@ async def get_topic(message: Message, state: FSMContext):
         topic_name, topic_url = lst
         data = {topic_name: {"url": topic_url}}
         chat_info = await load_from_json("info_chats.json")
-        if chat_id in chat_info:
-            chat_info.get(chat_id)["Темы чата"] = data
+        if "Темы чата" not in chat_info:
+            chat_info["Темы чата"] = data
             await save_to_json(chat_info, "info_chats.json")
-            await message.answer(f"Тема: {topic_name} принята")
         else:
+            data_topic = chat_info.get("Темы чата")
+            data_topic.update(data)
+            await save_to_json(chat_info, "info_chats.json")
             log.debug(f"Чата с текущем ID: {topic_name} не существует")
+        await message.answer(f"Тема: {topic_name} принята")
 
     except Exception as e:
         log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
@@ -111,7 +115,7 @@ async def view_topics(callback: CallbackQuery):
         response = "Список тем:\n"
         for topic, info in topics_info.items():
             log.debug(f"сообщение {info}")
-            response += f"{topics}: {info["url"]}\n"
+            response += f"{topics}: {info['url']}\n"
         await callback.message.answer(response)
     except Exception as e:
         log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")

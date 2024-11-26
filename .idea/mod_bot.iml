@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/bot_mod/Lib" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.12 (mod_bot)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.8 (mod_bot)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
