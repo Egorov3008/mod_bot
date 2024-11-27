@@ -15,6 +15,9 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 DEFAULT_COMMANDS = (
     ("start", "Запустить бота"),
-    ("check_bot_rights", "Проверка статуса бота"),
-    ("get_forum_info", "Информация о чате"),
+    ("help", "Список команд"),
+    ("get_chat_info", "Информация о чате")
 )
+
+FILE_INFO = "info_chats.json"
+FILE_TOPIC = "topic.json"

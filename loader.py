@@ -1,5 +1,5 @@
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
 from config_data.config import BOT_TOKEN
 
 

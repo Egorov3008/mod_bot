@@ -9,6 +9,7 @@ class Form(StatesGroup):
     choice = State()
 
 class Builder(StatesGroup):
+    menu = State()
     get_text = State()
     get_img = State()
     get_video = State()
@@ -17,6 +18,7 @@ class Builder(StatesGroup):
     get_time_del = State()
     choice_topic = State()
     done = State()
+    review = State()
 
 class Url(StatesGroup):
     url = State()
@@ -24,4 +26,6 @@ class Url(StatesGroup):
 
 class Topic(StatesGroup):
     menu = State()
+    delete = State()
+    choice = State()
 

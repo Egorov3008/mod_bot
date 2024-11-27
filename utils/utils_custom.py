@@ -7,12 +7,13 @@ chat_id = CHAT_ID
 log = get_logger(__name__)
 
 
-async def load_from_json(name_file):
+async def load_from_json(name_file, key=None):
     """
     Асинхронная функция для извлечения значения по ключу из JSON-файла.
 
     Args:
         name_file (str): Путь к файлу, содержащему JSON-данные.
+        key (str): Ключ для поиска данных.
 
     Returns:
         значение (Any): Значение, соответствующее указанному ключу, если он существует в JSON-файле.
@@ -31,20 +32,25 @@ async def load_from_json(name_file):
             contents = await f.read()
             if contents.strip():
                 data = json.loads(contents)
-                log.info(f"Значение успешно извлечено из файла '{name_file}'.")
+                log.info(f"Значение успешно извлечено из файла '{data}'.")
+
             else:
                 data = {}
                 log.warning(f"Файл '{name_file}' пуст, возвращается пустой словарь.")
     except (FileNotFoundError, json.JSONDecodeError) as e:
         log.error(f"Произошла ошибка при чтении файла '{name_file}': {e}")
         return False
+    if key is None:
+        return {} if data is None else data
 
-    if chat_id in data:
-        log.info(f"Данные загружены: {data[chat_id]}")
-        return data[chat_id]
+    if key in data:
+        for k in data:
+            if k == key:
+                log.info(f"Данные загружены: {data[k]}")
+                return data[k]
     else:
         log.warning(f"Chat_id '{chat_id}' не найден в файле '{name_file}'.")
-        return None
+        return {}
 
 
 async def save_to_json(data, name_file):

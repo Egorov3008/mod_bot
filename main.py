@@ -1,26 +1,24 @@
 import asyncio
-from handlers.default_handlers import adm_handlers, message, topic_handler
+from aiogram import Bot, Dispatcher
+from handlers.default_handlers import adm_handlers, message, topic_handler, help
 from loader import dp, bot
 from loger.logger_helper import get_logger
 from utils.send_comand import set_default_commands
 
 log = get_logger(__name__)
 
+async def on_startup(dispatcher: Dispatcher):
+    log.info("Запуск бота...")
+    await set_default_commands(bot)
 
 async def main():
-    log.info("Запуск бота...")
-    try:
-        dp.include_routers(adm_handlers.router,
-                           message.router,
-                           topic_handler.router,
-                           )
-        await set_default_commands(bot)
-        await dp.start_polling(bot)
-    except Exception as e:
-        log.error(f"Произошла ошибка во время работы бота: {e}")
-    finally:
-        log.info("Бот завершил работу.")
+    dp.include_router(topic_handler.router)
+    dp.include_router(adm_handlers.router)
+    dp.include_router(message.router)
+    dp.include_router(help.router)
 
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     try:
