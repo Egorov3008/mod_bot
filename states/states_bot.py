@@ -19,6 +19,7 @@ class Builder(StatesGroup):
     choice_topic = State()
     done = State()
     review = State()
+    preview = State()
 
 class Url(StatesGroup):
     url = State()

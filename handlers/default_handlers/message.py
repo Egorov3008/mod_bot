@@ -58,13 +58,14 @@ async def get_msg_elm(callback: CallbackQuery, state: FSMContext):
     elif callback.data == "time_del":
         await callback.message.answer("Введите время и дату удаления (в формате ГГГГ-ММ-ДД ЧЧ:ММ)")
         await state.set_state(Builder.get_time_del)
-    elif callback.data == "done":
-        await callback.message.answer("Напишите Да")
-        await state.set_state(Builder.done)
+    elif callback.data == "message preview":
+
+        await preview(callback.message, state)
+        await state.set_state(Builder.preview)
 
 
-@router.message(Builder.done)
-async def gone_format(message: Message, state: FSMContext):
+
+async def preview(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Формируем сообщение о принятых данных
