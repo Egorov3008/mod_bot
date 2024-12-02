@@ -29,4 +29,6 @@ class Topic(StatesGroup):
     menu = State()
     delete = State()
     choice = State()
+    add = State()
+    view_topics = State()
 

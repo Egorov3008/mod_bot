@@ -10,11 +10,37 @@ from states.states_bot import Form
 from loader import bot
 from config_data.config import CHAT_ID
 from loger.logger_helper import get_logger
+from database.data_db import insert_chat_id, Chat
 
 log = get_logger(__name__)
 router = Router()
 chat_id = CHAT_ID
 commads = DEFAULT_COMMANDS
+
+
+async def set_chat_id_db():
+    try:
+        # Получаем информацию о чате
+        chat = await bot.get_chat(chat_id)
+
+        # Проверяем, существует ли уже запись с таким chat_id
+        if not Chat.select().where(Chat.chat_id == chat_id).exists():
+            # Если записи нет, добавляем в базу данных
+            insert_chat_id(chat_id, chat.title)
+        else:
+            log.info(f"Чат с chat_id={chat_id} уже существует в базе данных.")
+    except Exception as e:
+        log.error(f"Возникла ошибка при получении чата: {e}\nТрассировка:\n{traceback.format_exc()}")
+
+
+async def get_state(state: FSMContext):
+    current_state = await state.get_state()
+    log.debug(f"Статус {current_state}")
+
+
+async def gone_set(message: Message, state: FSMContext):
+    await get_state(state)
+    await message.delete()
 
 
 @router.message(CommandStart())
@@ -27,7 +53,7 @@ async def start_bot(message: Message, state: FSMContext):
     :param state: FSMContext - Контекст состояния для работы с состояниями.
     """
     user = message.from_user
-
+    await set_chat_id_db()
     try:
         bot_user = await bot.get_me()
         bot_member = await bot.get_chat_member(chat_id, bot_user.id)
@@ -43,6 +69,7 @@ async def start_bot(message: Message, state: FSMContext):
             await message.answer(f"Привет {user_name}! Я готов к работе\n"
                                  f"Зайди в меню 👇", reply_markup=kb)
             await state.set_state(Form.admin_true)
+            await gone_set(message, state)
 
         else:
             await message.answer(f"Привет {user_name}! У кого-то нет прав администратора в чате!\n"
@@ -146,4 +173,6 @@ async def get_chat_info(message: Message):
 async def get_cancel(callback: CallbackQuery, state: FSMContext):
     kb = await choice()
     await callback.message.answer("Выберете пункт", reply_markup=kb)
+    await state.clear()
     await state.set_state(Form.admin_true)
+    await gone_set(callback.message, state)

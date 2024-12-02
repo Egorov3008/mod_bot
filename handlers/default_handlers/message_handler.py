@@ -1,27 +1,31 @@
 import datetime
+import traceback
 from aiogram.filters import Command
-
 from aiogram import Router, F
 from aiogram.enums import ContentType
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import Message, CallbackQuery
 from loger.logger_helper import get_logger
-from keyboards.inline.inline_config import kb_url, choice_filter_done
+from keyboards.inline.inline_config import choice_filter_done, msg_choice, choice
 from states.states_bot import Form, Builder
 from config_data.config import CHAT_ID
-from utils.utils_custom import load_from_json, save_to_json
+from database.data_db import insert_message
 
 chat_id = CHAT_ID
 log = get_logger(__name__)
 router = Router()
-text = "Если сообщение сформировано, нажми ГОТОВО"
+text = "Если сообщение сформировано, нажми ПРЕДПРОСМОТР СООБЩЕНИЯ"
 
 
-async def gone_set(message: Message):
+async def get_state(state: FSMContext):
+    current_state = await state.get_state()
+    log.debug(f"Статус {current_state}")
+
+
+async def gone_set(message: Message, state: FSMContext):
     kb_done = await choice_filter_done()
     await message.answer(text, reply_markup=kb_done)
-    await message.delete()
+    await get_state(state)
 
 
 def is_img_message(message: Message):
@@ -29,13 +33,14 @@ def is_img_message(message: Message):
 
 
 @router.message(Command("schedule_message"), Form.admin_true)
-@router.callback_query(F.data == "msg")
+@router.callback_query(F.data == "msg", Form.admin_true)
 async def set_text(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     log.info("Пользователь выбрал 'schedule_message'.")
     kb = await choice_filter_done()
     await callback.message.answer("Выберете элементы", reply_markup=kb)
     await state.set_state(Builder.menu)
+    await get_state(state)
 
 
 @router.callback_query(F.data, Builder.menu)
@@ -49,8 +54,7 @@ async def get_msg_elm(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Загрузите картинку")
         await state.set_state(Builder.get_img)
     elif callback.data == "url":
-        kb = await kb_url()
-        await callback.message.answer("Загрузите ссылку и ее название", reply_markup=kb)
+        await callback.message.answer("Введите: 'название кнопки'|'ссылка для кнопки'\n")
         await state.set_state(Builder.get_url)
     elif callback.data == "time_out":
         await callback.message.answer("Введите время и дату публикации (в формате ГГГГ-ММ-ДД ЧЧ:ММ)")
@@ -58,18 +62,31 @@ async def get_msg_elm(callback: CallbackQuery, state: FSMContext):
     elif callback.data == "time_del":
         await callback.message.answer("Введите время и дату удаления (в формате ГГГГ-ММ-ДД ЧЧ:ММ)")
         await state.set_state(Builder.get_time_del)
-    elif callback.data == "message preview":
-
+    elif callback.data == "message_preview":
         await preview(callback.message, state)
-        await state.set_state(Builder.preview)
+    elif callback.data == "done":
+        try:
+            data = await state.get_data()
 
+            insert_message(text=data.get("text"), img=data.get("img"),
+                           link_text=data.get("link_text"), link_url=data.get("link_url"),
+                           time_start=data.get("time_start"), time_del=data.get("time_del"), topic_id=data.get("id_topic"),
+                           chat_id=chat_id)
+
+            await callback.message.answer("Сообщение сформировано")
+            await state.set_state(Builder.menu)
+        except Exception as e:
+            log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
+            await callback.message.answer(f"Что-то пошло не так((( {e}")
+    elif callback.data == "deleted_data":
+        await state.clear()
+        kb = await choice()
+        await callback.message.answer("Сообщение удалено.\nВыберете пункт", reply_markup=kb)
+    await get_state(state)
 
 
 async def preview(message: Message, state: FSMContext):
     data = await state.get_data()
-
-    # Формируем сообщение о принятых данных
-    msg = "Приняты следующие данные:\n"
     data_msg = {
         "Время публикации": data.get("time_start"),
         "Время удаления": data.get("time_del"),
@@ -79,69 +96,67 @@ async def preview(message: Message, state: FSMContext):
         "Ссылка": data.get("link_url"),
         "Id_topic": data.get("id_topic")
     }
+    msg = "Приняты следующие данные:\n"
 
-    # Добавляем информацию о данных в сообщение
+    log.debug(f"Добавляем информацию о данных в сообщение {data}")
     for key, value in data_msg.items():
         if key != "Картинка":
             msg += f"{key}: {value}\n"
 
-    # Проверяем наличие картинки и отправляем соответствующее сообщение
+    log.debug(f"Проверяем наличие картинки и отправляем соответствующее сообщение ")
     if data_msg.get("Картинка"):
-        # Если есть id картинки, отправляем изображение
+        log.debug("Есть id картинки, отправляем изображение")
         file_id = data_msg.get("Картинка")
         await message.answer_photo(photo=file_id, caption=msg)
     else:
         # Отправляем сообщение без изображения
         await message.answer(msg)
 
-    # Проверяем наличие ссылки и создаем кнопку
-    if data_msg.get("link_url"):
-        button_text = data_msg.get("link_text")
-        button = [[InlineKeyboardButton(text=button_text, url=data_msg["link_url"])]]
-        keyboard = InlineKeyboardMarkup(inline_keyboard=button)
-        keyboard.add(button)
-
-        # Отправляем сообщение с кнопкой, если есть ссылка
-        await message.answer(msg, reply_markup=keyboard)
-
-
+    kb = await msg_choice()
+    await message.answer("Выберете действие:", reply_markup=kb)
 
 
 @router.message(Builder.get_text)
 async def process_get_text(message: Message, state: FSMContext):
     log.info("Пользователь ввел текст.")
     await state.update_data(text=message.text)
+    await message.reply("Сообщение принято")
 
-    await gone_set(message)
     await state.set_state(Builder.menu)
+    await gone_set(message, state)
 
 
 @router.message(Builder.get_img, is_img_message)
 async def process_get_img(message: Message, state: FSMContext):
     log.info("Пользователь загрузил изображение.")
     await state.update_data(img=message.photo[-1].file_id)
-
-    await gone_set(message)
+    await message.reply("Картинка принята")
     await state.set_state(Builder.menu)
+    await gone_set(message, state)
 
 
 @router.message(Builder.get_url)
-async def process_get_url(message: Message, state: FSMContext):
-    data = await state.get_data()
-    if 'link_text' not in data:
-        log.info("Пользователь ввел текст кнопки для ссылки.")
-        await state.update_data(link_text=message.text)
-        await message.reply("Теперь введите URL:")
-    else:
-        log.info("Пользователь ввел URL для кнопки.")
-        await state.update_data(link_url=message.text)
-        data = await state.get_data()
-        link_text = data.get("link_text")
-        link_url = data.get("link_url")
-        log.debug(f"Переданы следующие параметры: link_text:  {link_text}, link_url: {link_url}")
-        await message.answer(f"Параметры приняты.\nНазвание кнопки:  {link_text}\nСсылка: {link_url}")
-        await gone_set(message)
+async def get_topic(message: Message, state: FSMContext):
+    text = message.text
+    log.debug(f"Получено сообщение {text}")
+    lst = text.split('|')
+    if len(lst) != 2:
+        await message.answer("Неправильный формат. Попробуйте еще раз ввести 'название темы'|'ссылка на тему'")
+        return
+    try:
+        name_kb, kb_url = lst
+        await state.update_data(link_text=name_kb)
+        await state.update_data(link_url=kb_url)
+        await message.answer(f"Название кнопки: {name_kb}\n"
+                             f"Ссылка кнопки: {kb_url}. Приняты!"
+                             )
         await state.set_state(Builder.menu)
+        await gone_set(message, state)
+    except Exception as e:
+        log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
+        await message.answer("Что-то пошло не так!")
+        await state.set_state(Builder.menu)
+        await get_state(state)
 
 
 @router.callback_query(Builder.get_url)
@@ -155,11 +170,13 @@ async def get_name_url(callback: CallbackQuery, state: FSMContext):
 async def process_get_time_start(message: Message, state: FSMContext):
     log.info("Пользователь ввел время и дату публикации.")
     try:
-        time_start = datetime.datetime.strptime(message.text, "%Y-%m-%d %H:%M")
+        text_time = message.text + ":00"
+        time_start = datetime.datetime.strptime(text_time, "%Y-%m-%d %H:%M:%S")
         await state.update_data(time_start=time_start)
         await message.answer("Время принято")
-        await gone_set(message)
-        await state.set_state(Form.msg)
+        await state.set_state(Builder.menu)
+        await gone_set(message, state)
+
     except ValueError:
         log.error("Неправильный формат времени для публикации.")
         await message.reply("Неправильный формат времени. Попробуйте еще раз.")
@@ -170,11 +187,13 @@ async def process_get_time_start(message: Message, state: FSMContext):
 async def process_get_time_del(message: Message, state: FSMContext):
     log.info("Пользователь ввел время и дату удаления.")
     try:
-        time_del = datetime.datetime.strptime(message.text, "%Y-%m-%d %H:%M")
+        text_time = message.text + ":00"
+        time_del = datetime.datetime.strptime(text_time, "%Y-%m-%d %H:%M:%S")
         await state.update_data(time_del=time_del)
         await message.reply("Время принято")
-        await gone_set(message)
         await state.set_state(Builder.menu)
+        await gone_set(message, state)
+
     except ValueError:
         log.error("Неправильный формат времени для удаления.")
         await message.reply("Неправильный формат времени. Попробуйте еще раз.")
