@@ -5,13 +5,17 @@ from aiogram import Router, F
 from aiogram.enums import ContentType
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from loger.logger_helper import get_logger
 from keyboards.inline.inline_config import choice_filter_done, msg_choice, choice
 from states.states_bot import Form, Builder
 from config_data.config import CHAT_ID
 from database.data_db import insert_message
+from api_tg.api_chat import fetch_jobs
 
 chat_id = CHAT_ID
+scheduler = AsyncIOScheduler()
 log = get_logger(__name__)
 router = Router()
 text = "Если сообщение сформировано, нажми ПРЕДПРОСМОТР СООБЩЕНИЯ"
@@ -65,16 +69,21 @@ async def get_msg_elm(callback: CallbackQuery, state: FSMContext):
     elif callback.data == "message_preview":
         await preview(callback.message, state)
     elif callback.data == "done":
+        data = await state.get_data()
         try:
-            data = await state.get_data()
 
-            insert_message(text=data.get("text"), img=data.get("img"),
-                           link_text=data.get("link_text"), link_url=data.get("link_url"),
-                           time_start=data.get("time_start"), time_del=data.get("time_del"), topic_id=data.get("id_topic"),
-                           chat_id=chat_id)
+            insert_message(text=data.get("text"), img=data.get("img"), time_start=data.get("time_start"),
+                           time_del=data.get("time_del"), link_text=data.get("link_text"),
+                           link_url=data.get("link_url"), topic_id=data.get("id_topic"), chat_id=chat_id)
 
             await callback.message.answer("Сообщение сформировано")
+            log.info("Запуск start_fetch_jobs...")
+            await fetch_jobs()
+            await state.clear()
             await state.set_state(Builder.menu)
+            kb = await msg_choice()
+            await callback.message.answer("Выберете действие:", reply_markup=kb)
+
         except Exception as e:
             log.error(f"Возникла ошибка: {e}\nТрассировка:\n{traceback.format_exc()}")
             await callback.message.answer(f"Что-то пошло не так((( {e}")
@@ -172,6 +181,7 @@ async def process_get_time_start(message: Message, state: FSMContext):
     try:
         text_time = message.text + ":00"
         time_start = datetime.datetime.strptime(text_time, "%Y-%m-%d %H:%M:%S")
+
         await state.update_data(time_start=time_start)
         await message.answer("Время принято")
         await state.set_state(Builder.menu)

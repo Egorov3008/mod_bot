@@ -9,20 +9,21 @@ from api_tg.api_chat import start_fetch_jobs
 log = get_logger(__name__)
 
 # Глобальная переменная для хранения планировщика
-scheduler = None
+scheduler_start_fetch_jobs = None
+
 
 async def on_startup():
     log.info("Запуск бота...")
     await set_default_commands(bot)
 
-    global scheduler
-    scheduler = await start_fetch_jobs()  # Сохраняем экземпляр планировщика
+    global scheduler_start_fetch_jobs
+    scheduler_start_fetch_jobs = await start_fetch_jobs()  # Сохраняем экземпляр планировщика
 
 async def stop_scheduler():
-    global scheduler
-    if scheduler:
-        log.info("Остановка планировщика задач...")
-        scheduler.shutdown()  # Остановка планировщика, если он был запущен
+    global scheduler_start_fetch_jobs
+    if scheduler_start_fetch_jobs:
+        log.info("Остановка планировщика задач scheduler_start_fetch_jobs...")
+        scheduler_start_fetch_jobs.shutdown()  # Остановка планировщика, если он был запущен
         log.info("Планировщик задач остановлен.")
 
 async def main():
